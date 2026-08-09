@@ -4413,6 +4413,7 @@ function displaySearchResults(newItems, options = {}) {
 // 显示质量选择菜单
 function showQualityMenu(event, index, type) {
   event.stopPropagation();
+
   const existingMenu = document.querySelector(".dynamic-quality-menu");
   if (existingMenu) existingMenu.remove();
 
@@ -4420,16 +4421,16 @@ function showQualityMenu(event, index, type) {
   menu.className = "dynamic-quality-menu";
   menu.innerHTML = `
     <div class="quality-menu-title">下载到本地</div>
-    <div class="quality-option" data-quality="128" data-action="local">标准音质 (128k)</div>
-    <div class="quality-option" data-quality="192" data-action="local">高音质 (192k)</div>
-    <div class="quality-option" data-quality="320" data-action="local">超高音质 (320k)</div>
-    <div class="quality-option" data-quality="999" data-action="local">无损音质</div>
+    <div class="quality-option" data-quality="128" data-action="download-local">标准音质 (128k)</div>
+    <div class="quality-option" data-quality="192" data-action="download-local">高音质 (192k)</div>
+    <div class="quality-option" data-quality="320" data-action="download-local">超高音质 (320k)</div>
+    <div class="quality-option" data-quality="999" data-action="download-local">无损音质</div>
     <div class="quality-menu-divider"></div>
     <div class="quality-menu-title">下载到NAS</div>
-    <div class="quality-option" data-quality="128" data-action="nas">标准音质 (128k)</div>
-    <div class="quality-option" data-quality="192" data-action="nas">高音质 (192k)</div>
-    <div class="quality-option" data-quality="320" data-action="nas">超高音质 (320k)</div>
-    <div class="quality-option" data-quality="999" data-action="nas">无损音质</div>
+    <div class="quality-option" data-quality="128" data-action="download-nas">标准音质 (128k)</div>
+    <div class="quality-option" data-quality="192" data-action="download-nas">高音质 (192k)</div>
+    <div class="quality-option" data-quality="320" data-action="download-nas">超高音质 (320k)</div>
+    <div class="quality-option" data-quality="999" data-action="download-nas">无损音质</div>
   `;
 
   const button = event.target.closest("button");
@@ -4446,7 +4447,7 @@ function showQualityMenu(event, index, type) {
     const quality = option.dataset.quality;
     const action = option.dataset.action;
     menu.remove();
-    if (action === "nas") {
+    if (action === "download-nas") {
       downloadWithQualityToNas(event, index, type, quality);
     } else {
       downloadWithQuality(event, index, type, quality);
@@ -4456,59 +4457,79 @@ function showQualityMenu(event, index, type) {
   document.body.appendChild(menu);
   setTimeout(() => {
     document.addEventListener("click", function closeMenu(e) {
-      if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener("click", closeMenu); }
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener("click", closeMenu);
+      }
     });
   }, 0);
 }
 
 // 根据质量下载 - 支持播放列表模式
 async function downloadWithQuality(event, index, type, quality) {
-    event.stopPropagation();
-    let song;
+  event.stopPropagation();
+  let song;
 
-    if (type === "search") {
-        song = state.searchResults[index];
-    } else if (type === "online") {
-        song = state.onlineSongs[index];
-    } else if (type === "playlist") {
-        song = state.playlistSongs[index];
-    } else if (type === "favorites") {
-        song = state.favoriteSongs[index];
-    }
+  if (type === "search") song = state.searchResults[index];
+  else if (type === "online") song = state.onlineSongs[index];
+  else if (type === "playlist") song = state.playlistSongs[index];
+  else if (type === "favorites") song = state.favoriteSongs[index];
 
-    if (!song) return;
+  if (!song) return;
 
-    //根据质量下载到NAS
-    async function downloadWithQualityToNas(event, index, type, quality) {
-      event.stopPropagation();
-      let song;
-      if (type === "search") song = state.searchResults[index];
-      else if (type === "online") song = state.onlineSongs[index];
-      else if (type === "playlist") song = state.playlistSongs[index];
-      else if (type === "favorites") song = state.favoriteSongs[index];
-      if (!song) return;
-    
-      const dynamicMenu = document.querySelector(".dynamic-quality-menu");
-      if (dynamicMenu) dynamicMenu.remove();
-    
-      try {
-        showNotification("正在下载到NAS...");
-        const res = await fetch('/api/download', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ song, quality })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showNotification(data.message === '文件已存在' ? `NAS已存在: ${data.filename}` : `已下载到NAS: ${data.filename}`, "success");
-        } else {
-          showNotification(data.error || "下载到NAS失败", "error");
-        }
-      } catch (error) {
-        console.error("下载到NAS失败:", error);
-        showNotification("下载到NAS失败，请检查网络", "error");
+  document.querySelectorAll(".quality-menu").forEach(menu => {
+    menu.classList.remove("show");
+    const parentItem = menu.closest(".search-result-item");
+    if (parentItem) parentItem.classList.remove("menu-active");
+  });
+
+  const dynamicMenu = document.querySelector(".dynamic-quality-menu");
+  if (dynamicMenu) dynamicMenu.remove();
+
+  try {
+    await downloadSong(song, quality);
+  } catch (error) {
+    console.error("下载失败:", error);
+    showNotification("下载失败，请稍后重试", "error");
+  }
+}
+//根据质量下载到NAS
+async function downloadWithQualityToNas(event, index, type, quality) {
+  event.stopPropagation();
+  let song;
+
+  if (type === "search") song = state.searchResults[index];
+  else if (type === "online") song = state.onlineSongs[index];
+  else if (type === "playlist") song = state.playlistSongs[index];
+  else if (type === "favorites") song = state.favoriteSongs[index];
+
+  if (!song) return;
+
+  const dynamicMenu = document.querySelector(".dynamic-quality-menu");
+  if (dynamicMenu) dynamicMenu.remove();
+
+  try {
+    showNotification(`正在下载到NAS: ${song.name}...`);
+    const res = await fetch('/api/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ song, quality })
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (data.message === '文件已存在') {
+        showNotification(`NAS中已存在: ${data.filename}`, "warning");
+      } else {
+        showNotification(`下载完成: ${data.filename}`, "success");
       }
+    } else {
+      showNotification(data.error || "下载到NAS失败", "error");
     }
+  } catch (error) {
+    console.error("下载到NAS失败:", error);
+    showNotification("下载到NAS失败，请检查网络", "error");
+  }
+}
 
     // 关闭菜单并移除 menu-active 类
     document.querySelectorAll(".quality-menu").forEach(menu => {
@@ -6330,55 +6351,44 @@ function scrollToCurrentLyric(element, containerOverride) {
 
 // 修复：下载歌曲
 async function downloadSong(song, quality = "320") {
-    try {
-        showNotification("正在准备下载...");
+  try {
+    showNotification("正在获取下载链接...");
 
-        const audioUrl = API.getSongUrl(song, quality);
-        const audioData = await API.fetchJson(audioUrl);
+    const audioUrl = API.getSongUrl(song, quality);
+    const audioData = await API.fetchJson(audioUrl);
 
-        if (audioData && audioData.url) {
-            const proxiedAudioUrl = buildAudioProxyUrl(audioData.url);
-            const preferredAudioUrl = preferHttpsUrl(audioData.url);
+    if (audioData && audioData.url) {
+      const proxiedAudioUrl = buildAudioProxyUrl(audioData.url);
+      const preferredAudioUrl = preferHttpsUrl(audioData.url);
 
-            if (proxiedAudioUrl !== audioData.url) {
-                debugLog(`下载链接已通过代理转换为 HTTPS: ${proxiedAudioUrl}`);
-            } else if (preferredAudioUrl !== audioData.url) {
-                debugLog(`下载链接由 HTTP 升级为 HTTPS: ${preferredAudioUrl}`);
-            }
+      const downloadUrl = proxiedAudioUrl || preferredAudioUrl || audioData.url;
 
-            const downloadUrl = proxiedAudioUrl || preferredAudioUrl || audioData.url;
-
-            const link = document.createElement("a");
-            link.href = downloadUrl;
-            const preferredExtension =
-                quality === "999" ? "flac" : quality === "740" ? "ape" : "mp3";
-            const fileExtension = (() => {
-                try {
-                    const url = new URL(audioData.url);
-                    const pathname = url.pathname || "";
-                    const match = pathname.match(/\.([a-z0-9]+)$/i);
-                    if (match) {
-                        return match[1];
-                    }
-                } catch (error) {
-                    console.warn("无法从下载链接中解析扩展名:", error);
-                }
-                return preferredExtension;
-            })();
-            link.download = `${song.name} - ${Array.isArray(song.artist) ? song.artist.join(", ") : song.artist}.${fileExtension}`;
-            link.target = "_blank";
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            showNotification("下载已开始", "success");
-        } else {
-            throw new Error("无法获取下载地址");
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      const preferredExtension = quality === "999" ? "flac" : quality === "740" ? "ape" : "mp3";
+      const fileExtension = (() => {
+        try {
+          const match = new URL(audioData.url).pathname.match(/\.([a-z0-9]+)$/i);
+          if (match) return match[1];
+        } catch (error) {
+          console.warn("无法从下载链接中解析扩展名:", error);
         }
-    } catch (error) {
-        console.error("下载失败:", error);
-        showNotification("下载失败，请稍后重试", "error");
+        return preferredExtension;
+      })();
+      link.download = `${song.name} - ${Array.isArray(song.artist) ? song.artist.join(", ") : song.artist}.${fileExtension}`;
+      link.target = "_blank";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      showNotification(`已开始下载: ${song.name}`, "success");
+    } else {
+      throw new Error("无法获取下载地址");
     }
+  } catch (error) {
+    console.error("下载失败:", error);
+    showNotification("下载失败，请稍后重试", "error");
+  }
 }
 
 // 修复：移动端视图切换
