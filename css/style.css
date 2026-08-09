@@ -2387,6 +2387,7 @@ input[type="range"]:active::-moz-range-thumb {
     transform: translateY(0);
 }
 
+/* 添加到 css/style.css 或 desktop.css 末尾 */
 .quality-menu-title {
   padding: 6px 12px;
   font-size: 11px;
