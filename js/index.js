@@ -4412,44 +4412,53 @@ function displaySearchResults(newItems, options = {}) {
 
 // 显示质量选择菜单
 function showQualityMenu(event, index, type) {
-    event.stopPropagation();
+  event.stopPropagation();
+  const existingMenu = document.querySelector(".dynamic-quality-menu");
+  if (existingMenu) existingMenu.remove();
 
-    // 移除现有的质量菜单
-    const existingMenu = document.querySelector(".dynamic-quality-menu");
-    if (existingMenu) {
-        existingMenu.remove();
+  const menu = document.createElement("div");
+  menu.className = "dynamic-quality-menu";
+  menu.innerHTML = `
+    <div class="quality-menu-title">下载到本地</div>
+    <div class="quality-option" data-quality="128" data-action="local">标准音质 (128k)</div>
+    <div class="quality-option" data-quality="192" data-action="local">高音质 (192k)</div>
+    <div class="quality-option" data-quality="320" data-action="local">超高音质 (320k)</div>
+    <div class="quality-option" data-quality="999" data-action="local">无损音质</div>
+    <div class="quality-menu-divider"></div>
+    <div class="quality-menu-title">下载到NAS</div>
+    <div class="quality-option" data-quality="128" data-action="nas">标准音质 (128k)</div>
+    <div class="quality-option" data-quality="192" data-action="nas">高音质 (192k)</div>
+    <div class="quality-option" data-quality="320" data-action="nas">超高音质 (320k)</div>
+    <div class="quality-option" data-quality="999" data-action="nas">无损音质</div>
+  `;
+
+  const button = event.target.closest("button");
+  const rect = button.getBoundingClientRect();
+  menu.style.position = "fixed";
+  menu.style.top = (rect.bottom + 5) + "px";
+  menu.style.left = (rect.left - 50) + "px";
+  menu.style.zIndex = "10000";
+
+  menu.addEventListener("click", (e) => {
+    const option = e.target.closest(".quality-option");
+    if (!option) return;
+    e.stopPropagation();
+    const quality = option.dataset.quality;
+    const action = option.dataset.action;
+    menu.remove();
+    if (action === "nas") {
+      downloadWithQualityToNas(event, index, type, quality);
+    } else {
+      downloadWithQuality(event, index, type, quality);
     }
+  });
 
-    // 创建新的质量菜单
-    const menu = document.createElement("div");
-    menu.className = "dynamic-quality-menu";
-    menu.innerHTML = `
-        <div class="quality-option" onclick="downloadWithQuality(event, ${index}, '${type}', '128')">标准音质 (128k)</div>
-        <div class="quality-option" onclick="downloadWithQuality(event, ${index}, '${type}', '192')">高音质 (192k)</div>
-        <div class="quality-option" onclick="downloadWithQuality(event, ${index}, '${type}', '320')">超高音质 (320k)</div>
-        <div class="quality-option" onclick="downloadWithQuality(event, ${index}, '${type}', '999')">无损音质</div>
-    `;
-
-    // 设置菜单位置
-    const button = event.target.closest("button");
-    const rect = button.getBoundingClientRect();
-    menu.style.position = "fixed";
-    menu.style.top = (rect.bottom + 5) + "px";
-    menu.style.left = (rect.left - 50) + "px";
-    menu.style.zIndex = "10000";
-
-    // 添加到body
-    document.body.appendChild(menu);
-
-    // 点击其他地方关闭菜单
-    setTimeout(() => {
-        document.addEventListener("click", function closeMenu(e) {
-            if (!menu.contains(e.target)) {
-                menu.remove();
-                document.removeEventListener("click", closeMenu);
-            }
-        });
-    }, 0);
+  document.body.appendChild(menu);
+  setTimeout(() => {
+    document.addEventListener("click", function closeMenu(e) {
+      if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener("click", closeMenu); }
+    });
+  }, 0);
 }
 
 // 根据质量下载 - 支持播放列表模式
@@ -4468,6 +4477,38 @@ async function downloadWithQuality(event, index, type, quality) {
     }
 
     if (!song) return;
+
+    //根据质量下载到NAS
+    async function downloadWithQualityToNas(event, index, type, quality) {
+      event.stopPropagation();
+      let song;
+      if (type === "search") song = state.searchResults[index];
+      else if (type === "online") song = state.onlineSongs[index];
+      else if (type === "playlist") song = state.playlistSongs[index];
+      else if (type === "favorites") song = state.favoriteSongs[index];
+      if (!song) return;
+    
+      const dynamicMenu = document.querySelector(".dynamic-quality-menu");
+      if (dynamicMenu) dynamicMenu.remove();
+    
+      try {
+        showNotification("正在下载到NAS...");
+        const res = await fetch('/api/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ song, quality })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showNotification(data.message === '文件已存在' ? `NAS已存在: ${data.filename}` : `已下载到NAS: ${data.filename}`, "success");
+        } else {
+          showNotification(data.error || "下载到NAS失败", "error");
+        }
+      } catch (error) {
+        console.error("下载到NAS失败:", error);
+        showNotification("下载到NAS失败，请检查网络", "error");
+      }
+    }
 
     // 关闭菜单并移除 menu-active 类
     document.querySelectorAll(".quality-menu").forEach(menu => {
